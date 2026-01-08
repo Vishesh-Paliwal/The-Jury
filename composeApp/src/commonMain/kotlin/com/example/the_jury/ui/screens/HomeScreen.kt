@@ -15,6 +15,7 @@ import cafe.adriel.voyager.navigator.tab.TabNavigator
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import cafe.adriel.voyager.navigator.tab.TabOptions
 
@@ -26,6 +27,7 @@ object HomeScreen : Screen {
                 bottomBar = {
                     NavigationBar {
                         TabNavigationItem(ExecutionTab)
+                        TabNavigationItem(JuryTab)
                         TabNavigationItem(AgentsTab)
                     }
                 }
@@ -75,6 +77,27 @@ object ExecutionTab : Tab {
     }
 }
 
+object JuryTab : Tab {
+    override val options: TabOptions
+        @Composable
+        get() {
+            val title = "Jury"
+            val icon = rememberVectorPainter(Icons.Default.Gavel)
+            return remember {
+                TabOptions(
+                    index = 1u,
+                    title = title,
+                    icon = icon
+                )
+            }
+        }
+
+    @Composable
+    override fun Content() {
+        JuryScreen().Content()
+    }
+}
+
 object AgentsTab : Tab {
     override val options: TabOptions
         @Composable
@@ -83,7 +106,7 @@ object AgentsTab : Tab {
             val icon = rememberVectorPainter(Icons.Default.Person)
             return remember {
                 TabOptions(
-                    index = 1u,
+                    index = 2u,
                     title = title,
                     icon = icon
                 )
