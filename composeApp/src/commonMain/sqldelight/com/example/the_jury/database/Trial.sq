@@ -1,0 +1,39 @@
+CREATE TABLE Trial (
+    id TEXT NOT NULL PRIMARY KEY,
+    originalQuestion TEXT NOT NULL,
+    personas TEXT NOT NULL, -- JSON serialized list of AgentPersona
+    status TEXT NOT NULL,
+    verdict TEXT,
+    createdAt INTEGER NOT NULL,
+    completedAt INTEGER
+);
+
+-- Queries for Trial table
+selectAll:
+SELECT * FROM Trial;
+
+selectById:
+SELECT * FROM Trial WHERE id = ?;
+
+insert:
+INSERT INTO Trial(id, originalQuestion, personas, status, verdict, createdAt, completedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+update:
+UPDATE Trial SET
+    originalQuestion = ?,
+    personas = ?,
+    status = ?,
+    verdict = ?,
+    createdAt = ?,
+    completedAt = ?
+WHERE id = ?;
+
+updateStatus:
+UPDATE Trial SET status = ? WHERE id = ?;
+
+updateVerdict:
+UPDATE Trial SET verdict = ?, status = ?, completedAt = ? WHERE id = ?;
+
+deleteById:
+DELETE FROM Trial WHERE id = ?;

@@ -1,0 +1,31 @@
+CREATE TABLE TrialInteraction (
+    id TEXT NOT NULL PRIMARY KEY,
+    trialId TEXT NOT NULL,
+    type TEXT NOT NULL,
+    speaker TEXT NOT NULL,
+    content TEXT NOT NULL,
+    targetPersona TEXT,
+    timestamp INTEGER NOT NULL,
+    roundNumber INTEGER NOT NULL,
+    FOREIGN KEY (trialId) REFERENCES Trial(id) ON DELETE CASCADE
+);
+
+-- Queries for TrialInteraction table
+selectAll:
+SELECT * FROM TrialInteraction;
+
+selectByTrialId:
+SELECT * FROM TrialInteraction WHERE trialId = ? ORDER BY timestamp ASC;
+
+selectById:
+SELECT * FROM TrialInteraction WHERE id = ?;
+
+insert:
+INSERT INTO TrialInteraction(id, trialId, type, speaker, content, targetPersona, timestamp, roundNumber)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteByTrialId:
+DELETE FROM TrialInteraction WHERE trialId = ?;
+
+deleteById:
+DELETE FROM TrialInteraction WHERE id = ?;

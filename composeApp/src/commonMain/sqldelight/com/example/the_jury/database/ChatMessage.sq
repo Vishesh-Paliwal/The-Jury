@@ -1,0 +1,36 @@
+CREATE TABLE ChatMessage (
+    id TEXT NOT NULL PRIMARY KEY,
+    trialId TEXT NOT NULL,
+    sender TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    messageType TEXT NOT NULL,
+    streamingState TEXT NOT NULL DEFAULT 'COMPLETE',
+    FOREIGN KEY (trialId) REFERENCES Trial(id) ON DELETE CASCADE
+);
+
+-- Queries for ChatMessage table
+selectAll:
+SELECT * FROM ChatMessage;
+
+selectByTrialId:
+SELECT * FROM ChatMessage WHERE trialId = ? ORDER BY timestamp ASC;
+
+selectById:
+SELECT * FROM ChatMessage WHERE id = ?;
+
+insert:
+INSERT INTO ChatMessage(id, trialId, sender, content, timestamp, messageType, streamingState)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateContent:
+UPDATE ChatMessage SET content = ?, streamingState = ? WHERE id = ?;
+
+updateStreamingState:
+UPDATE ChatMessage SET streamingState = ? WHERE id = ?;
+
+deleteByTrialId:
+DELETE FROM ChatMessage WHERE trialId = ?;
+
+deleteById:
+DELETE FROM ChatMessage WHERE id = ?;

@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeHotReload)
     alias(libs.plugins.kotlinSerialization)
+    alias(libs.plugins.sqldelight)
 }
 
 // Load local.properties
@@ -84,6 +85,10 @@ kotlin {
 
             // Serialization
             implementation(libs.kotlinx.serialization.json)
+            
+            // SQLDelight
+            implementation(libs.sqldelight.runtime)
+            implementation(libs.sqldelight.coroutines)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -93,11 +98,14 @@ kotlin {
             implementation(libs.kotlinx.coroutinesSwing)
             implementation("ai.koog:prompt-executor-google-client-jvm:0.6.0")
             implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1-0.6.x-compat")
+            implementation(libs.sqldelight.sqlite.driver)
         }
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
             implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1-0.6.x-compat")
+            implementation(libs.sqldelight.android.driver)
+            implementation("io.insert-koin:koin-android:4.0.0")
         }
     }
 }
@@ -138,6 +146,14 @@ android {
     }
     buildFeatures {
         buildConfig = true
+    }
+}
+
+sqldelight {
+    databases {
+        create("JuryDatabase") {
+            packageName.set("com.example.the_jury.database")
+        }
     }
 }
 

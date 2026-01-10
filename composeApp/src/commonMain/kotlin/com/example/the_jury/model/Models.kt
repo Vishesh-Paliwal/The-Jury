@@ -89,3 +89,42 @@ enum class ExecutionMode {
     PARALLEL,
     JURY
 }
+
+// Enhanced Chat Models for Persistence
+
+@OptIn(ExperimentalUuidApi::class)
+@Serializable
+data class ChatMessage(
+    val id: String = Uuid.random().toString(),
+    val trialId: String,
+    val sender: String,
+    val content: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val messageType: MessageType,
+    val streamingState: StreamingState = StreamingState.COMPLETE
+)
+
+@Serializable
+enum class MessageType {
+    USER_INPUT,
+    AGENT_RESPONSE,
+    SYSTEM_MESSAGE,
+    MODERATOR_MESSAGE
+}
+
+@Serializable
+enum class StreamingState {
+    STREAMING,
+    COMPLETE,
+    ERROR
+}
+
+// Persistence Models
+
+@Serializable
+data class PersistedTrial(
+    val trial: Trial,
+    val messages: List<ChatMessage>,
+    val lastAccessed: Long,
+    val version: Int = 1
+)
