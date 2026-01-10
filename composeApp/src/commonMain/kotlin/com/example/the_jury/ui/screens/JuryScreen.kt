@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,23 +25,31 @@ import cafe.adriel.voyager.core.screen.Screen
 import com.example.the_jury.model.*
 import com.example.the_jury.repo.PersonaRepository
 import com.example.the_jury.service.JuryService
+import com.example.the_jury.service.AgentRunnerService
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 
 class JuryScreen : Screen {
     @Composable
     override fun Content() {
         val repository: PersonaRepository = koinInject()
         val juryService: JuryService = koinInject()
+        val agentRunnerService: AgentRunnerService = koinInject()
         val personas by repository.personas.collectAsState()
         val scope = rememberCoroutineScope()
 
-        var juryQuestion by remember { mutableStateOf("") }
+        var juryQuestion by rememberSaveable { mutableStateOf("") }
         var currentTrialState by remember { mutableStateOf<TrialState?>(null) }
+        var parallelResults by remember { mutableStateOf<List<AgentResult>>(emptyList()) }
         var isRunning by remember { mutableStateOf(false) }
-        var executionMode by remember { mutableStateOf(ExecutionMode.PARALLEL) }
+        var executionMode by rememberSaveable { mutableStateOf(ExecutionMode.PARALLEL) }
+        val parallelGridState = rememberLazyGridState()
 
         Column(
             modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -77,11 +86,17 @@ class JuryScreen : Screen {
                 if (isRunning) {
                     Button(
                         onClick = {
-                            currentTrialState?.trial?.id?.let { trialId ->
-                                scope.launch {
-                                    juryService.stopTrial(trialId)
-                                    isRunning = false
+                            scope.launch {
+                                if (executionMode == ExecutionMode.JURY) {
+                                    currentTrialState?.trial?.id?.let { trialId ->
+                                        juryService.stopTrial(trialId)
+                                    }
+                                } else {
+                                    // For parallel mode, we could implement cancellation if needed
+                                    // For now, just reset the state
+                                    parallelResults = emptyList()
                                 }
+                                isRunning = false
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -105,9 +120,14 @@ class JuryScreen : Screen {
                                                 }
                                             }
                                     } else {
-                                        // For parallel mode, we would use the existing AgentRunnerService
-                                        // This is a simplified implementation for now
-                                        isRunning = false
+                                        // Parallel mode - use AgentRunnerService
+                                        agentRunnerService.runAgents(juryQuestion, personas)
+                                            .collect { newResults ->
+                                                parallelResults = newResults
+                                                if (newResults.none { it.isLoading }) {
+                                                    isRunning = false
+                                                }
+                                            }
                                     }
                                 }
                             }
@@ -130,13 +150,35 @@ class JuryScreen : Screen {
                 }
             }
 
-            // Trial Display
-            currentTrialState?.let { trialState ->
-                TrialDisplay(
-                    trialState = trialState,
-                    personas = personas,
-                    modifier = Modifier.weight(1f)
-                )
+            // Results Display
+            if (executionMode == ExecutionMode.JURY) {
+                // Trial Display for Jury mode
+                currentTrialState?.let { trialState ->
+                    TrialDisplay(
+                        trialState = trialState,
+                        personas = personas,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            } else {
+                // Parallel Results Grid for Parallel mode
+                if (parallelResults.isNotEmpty()) {
+                    LazyVerticalGrid(
+                        state = parallelGridState,
+                        columns = GridCells.Adaptive(minSize = 300.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        items(items = parallelResults, key = { it.personaId }) { result ->
+                            val persona = personas.find { it.id == result.personaId }
+                            AgentResultCard(
+                                agentName = persona?.name ?: "Unknown Agent",
+                                result = result
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -462,4 +504,36 @@ private fun ThinkingIndicator(
 private fun formatTimestamp(timestamp: Long): String {
     val formatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     return formatter.format(Date(timestamp))
+}
+
+@Composable
+fun AgentResultCard(agentName: String, result: AgentResult) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = agentName,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            if (result.isLoading) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("Thinking...", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top=4.dp))
+            } else if (result.error != null) {
+                 Text(
+                    text = "Error: ${result.error}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            } else {
+                Text(
+                    text = result.response,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
 }

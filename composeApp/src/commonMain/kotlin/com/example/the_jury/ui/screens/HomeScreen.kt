@@ -13,7 +13,6 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabNavigator
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -22,11 +21,13 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 object HomeScreen : Screen {
     @Composable
     override fun Content() {
-        TabNavigator(ExecutionTab) {
+        TabNavigator(JuryTab) {
             Scaffold(
                 bottomBar = {
-                    NavigationBar {
-                        TabNavigationItem(ExecutionTab)
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ) {
                         TabNavigationItem(JuryTab)
                         TabNavigationItem(AgentsTab)
                     }
@@ -43,38 +44,44 @@ object HomeScreen : Screen {
 @Composable
 private fun RowScope.TabNavigationItem(tab: Tab) {
     val tabNavigator = LocalTabNavigator.current
+    val isSelected = tabNavigator.current == tab
 
     NavigationBarItem(
-        selected = tabNavigator.current == tab,
+        selected = isSelected,
         onClick = { tabNavigator.current = tab },
-        label = { Text(tab.options.title) },
+        label = { 
+            Text(
+                text = tab.options.title,
+                style = if (isSelected) {
+                    MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                } else {
+                    MaterialTheme.typography.labelMedium
+                }
+            )
+        },
         icon = {
             tab.options.icon?.let { icon ->
-                Icon(painter = icon, contentDescription = tab.options.title)
-            }
-        }
-    )
-}
-
-object ExecutionTab : Tab {
-    override val options: TabOptions
-        @Composable
-        get() {
-            val title = "Run"
-            val icon = rememberVectorPainter(Icons.Default.PlayArrow)
-            return remember {
-                TabOptions(
-                    index = 0u,
-                    title = title,
-                    icon = icon
+                Icon(
+                    painter = icon, 
+                    contentDescription = tab.options.title,
+                    tint = if (isSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
-        }
-
-    @Composable
-    override fun Content() {
-        ExecutionScreen().Content()
-    }
+        },
+        colors = NavigationBarItemDefaults.colors(
+            selectedIconColor = MaterialTheme.colorScheme.primary,
+            selectedTextColor = MaterialTheme.colorScheme.primary,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            indicatorColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    )
 }
 
 object JuryTab : Tab {
@@ -85,7 +92,7 @@ object JuryTab : Tab {
             val icon = rememberVectorPainter(Icons.Default.Gavel)
             return remember {
                 TabOptions(
-                    index = 1u,
+                    index = 0u,
                     title = title,
                     icon = icon
                 )
@@ -106,7 +113,7 @@ object AgentsTab : Tab {
             val icon = rememberVectorPainter(Icons.Default.Person)
             return remember {
                 TabOptions(
-                    index = 2u,
+                    index = 1u,
                     title = title,
                     icon = icon
                 )
