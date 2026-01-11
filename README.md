@@ -22,15 +22,6 @@ The Jury is an innovative Kotlin Multiplatform application that simulates intell
 
 **📹 [Watch the Demo Video](demo-video-link-here)**
 
-*A 3-minute screencast demonstrating:*
-- Setting up AI personas with different expertise
-- Parallel vs Jury deliberation modes
-- Real-time streaming conversations
-- Full transcript viewing and trial history
-- Cross-platform functionality (Android & Desktop)
-
-> **Contest Requirement**: This screencast demonstrates the project's main features in action as required by the KotlinConf 2026 contest rules.
-
 ## 🚀 Key Features
 
 ### 🤖 Intelligent Agent System
@@ -57,8 +48,8 @@ The Jury is an innovative Kotlin Multiplatform application that simulates intell
 ## 🛠️ Technical Architecture
 
 ### Platforms Supported
-- **Android** (API 24+)
-- **Desktop** (JVM/Windows/macOS/Linux)
+- **Android** 
+- **Desktop** 
 
 ### Core Technologies
 
@@ -84,13 +75,13 @@ The Jury is an innovative Kotlin Multiplatform application that simulates intell
 Before running The Jury, ensure you have:
 
 1. **Development Environment**:
-   - Android Studio (latest stable version)
-   - JDK 11 or higher
+   - IntelliJ Idea 
+   - JDK 17
    - Kotlin Multiplatform plugin
 
 2. **AI API Access**:
-   - Koog AI API key (or compatible AI service)
-   - Internet connection for AI agent communication
+   - Gemini AI API KEY
+   - other AI providers can be used , you just have to configure respective provider for koog in code
 
 ## 🔧 Installation & Setup
 
@@ -103,31 +94,26 @@ cd The-Jury
 ### 2. Configure AI API
 Create a `local.properties` file in the project root:
 ```properties
-API_KEY=your_koog_ai_api_key_here
+API_KEY=your_gemni_ai_api_key_here
 ```
 
 ### 3. Build and Run
 
 #### Android
-```bash
-# Debug build
-./gradlew :composeApp:assembleDebug
 
-# Install on connected device
-./gradlew :composeApp:installDebug
-```
+just sync gradle and easily use default runner from IntelliJ Idea . composeApp with a phone of your choice
 
-#### Desktop (JVM)
-```bash
-# Run directly
-./gradlew :composeApp:run
+<img width="489" height="255" alt="Screenshot 2026-01-11 at 3 33 00 PM" src="https://github.com/user-attachments/assets/c49c38ce-0123-44da-af3c-a24966bd5136" />
 
-# Create distributable
-./gradlew :composeApp:createDistributable
-```
+<img width="653" height="46" alt="Screenshot 2026-01-11 at 3 30 28 PM" src="https://github.com/user-attachments/assets/95182118-680a-4738-92e5-ecaf490478de" />
 
-#### Windows Users
-Replace `./gradlew` with `.\gradlew.bat` in all commands above.
+
+#### Desktop (MAC PREFFERED) (JVM)
+
+just sync gradle and easily use default runner from IntelliJ Idea . composeApp (jvm) for desktop
+
+<img width="653" height="46" alt="Screenshot 2026-01-11 at 3 31 43 PM" src="https://github.com/user-attachments/assets/e1639d75-1bc7-41e4-9cea-47afa8334f4b" />
+
 
 ## 🎮 How to Use The Jury
 
@@ -188,21 +174,6 @@ This project fully complies with the KotlinConf 2026 Kotlin Multiplatform Contes
 - ✅ **GitHub Submission**: Available on GitHub with detailed README
 - ✅ **Screencast Demo**: Video demonstration of main features (see Demo section above)
 
-### 📹 Creating Your Demo Video
-
-To record your own demo video:
-
-1. **Setup**: Ensure the app is running with valid API keys
-2. **Content**: Show these key features in ~3 minutes:
-   - Creating AI personas with different roles
-   - Asking a complex question (e.g., ethical dilemma)
-   - Demonstrating both Parallel and Jury modes
-   - Real-time streaming responses
-   - Full-screen transcript view
-   - Trial history functionality
-3. **Platforms**: Show both Android and Desktop versions if possible
-4. **Tools**: Use OBS Studio, QuickTime, or your preferred screen recorder
-
 ## 🚀 Future Enhancements
 
 - **iOS Support**: Extend to iOS platform for complete mobile coverage
@@ -236,9 +207,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For questions about this project or the contest submission:
 
-- **GitHub**: [Your GitHub Profile]
-- **Email**: [Your Email]
-- **LinkedIn**: [Your LinkedIn Profile]
+- **GitHub**: Vishesh-Paliwal
+- **Email**: vishesh.paliwal23bcs10013@sst.scaler.com
 
 ---
 
