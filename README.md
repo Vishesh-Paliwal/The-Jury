@@ -20,7 +20,7 @@ The Jury is an innovative Kotlin Multiplatform application that simulates intell
 
 ## 🎬 Demo
 
-**📹 [Watch the Demo Video](demo-video-link-here)**
+**📹 [Watch the Demo Video](https://drive.google.com/file/d/1uH2yILTJ1oUJvQ7Greb7cUP_a7L7Y4LL/view?usp=sharing)**
 
 ## 🚀 Key Features
 
