@@ -10,7 +10,10 @@ actual class DatabaseDriverFactory {
         databasePath.parentFile?.mkdirs()
         
         val driver = JdbcSqliteDriver("jdbc:sqlite:${databasePath.absolutePath}")
+        
+        // Create schema - this is safe now because we use IF NOT EXISTS in SQL files
         JuryDatabase.Schema.create(driver)
+        
         return driver
     }
 }

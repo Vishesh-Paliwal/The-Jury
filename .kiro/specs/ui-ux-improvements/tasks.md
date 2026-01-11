@@ -18,7 +18,7 @@ This implementation plan focuses on enhancing the jury app with improved UI/UX, 
   - Implement stream state management and cancellation
   - _Requirements: 4.1, 4.2, 4.4, 4.5_
 
-- [ ] 3. Redesign navigation system
+- [x] 3. Redesign navigation system
   - [x] 3.1 Remove ExecutionTab and consolidate functionality into JuryTab
     - Merge execution controls into JuryScreen
     - Update navigation to show only Jury and Agents tabs
@@ -50,29 +50,29 @@ This implementation plan focuses on enhancing the jury app with improved UI/UX, 
     - Add loading state animations
     - _Requirements: 2.4_
 
-- [ ] 5. Integrate persistence with existing chat system
-  - [ ] 5.1 Update TrialService to use persistence layer
+- [x] 5. Integrate persistence with existing chat system
+  - [x] 5.1 Update TrialService to use persistence layer
     - Modify trial creation and storage to use database
     - Implement chat history loading on app startup
     - _Requirements: 3.1, 3.2_
 
-  - [ ] 5.2 Add loading states for chat restoration
+  - [x] 5.2 Add loading states for chat restoration
     - Implement loading indicators during data retrieval
     - Handle empty state and error conditions
     - _Requirements: 3.5_
 
-- [ ] 6. Implement streaming responses in JuryScreen
-  - [ ] 6.1 Update AgentRunnerService for streaming
+- [x] 6. Implement streaming responses in JuryScreen
+  - [x] 6.1 Update AgentRunnerService for streaming
     - Modify service to return streaming responses
     - Implement incremental text display
     - _Requirements: 4.1_
 
-  - [ ] 6.2 Add streaming UI components
+  - [x] 6.2 Add streaming UI components
     - Create streaming message components
     - Implement loading indicators for active streams
     - _Requirements: 4.3_
 
-  - [ ] 6.3 Handle streaming errors and interruptions
+  - [x] 6.3 Handle streaming errors and interruptions
     - Implement error recovery mechanisms
     - Ensure message integrity during failures
     - _Requirements: 4.2, 4.4_

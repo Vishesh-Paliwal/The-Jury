@@ -3,6 +3,7 @@ package com.example.the_jury.service
 import com.example.the_jury.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
@@ -23,6 +24,33 @@ class JuryService(
         private const val MAX_DELIBERATION_ROUNDS = 5
         private const val AGENT_TIMEOUT_MS = 30_000L // 30 seconds
         private const val TOTAL_TRIAL_TIMEOUT_MS = 300_000L // 5 minutes
+    }
+    
+    /**
+     * Exposes TrialService loading state for UI
+     * Requirements: 3.5 - loading states during data retrieval
+     */
+    val isLoading: StateFlow<Boolean> get() = trialService.isLoading
+    
+    /**
+     * Exposes TrialService error state for UI
+     * Requirements: 3.5 - handle empty state and error conditions
+     */
+    val error: StateFlow<String?> get() = trialService.error
+    
+    /**
+     * Initializes the jury service by loading existing trials from persistence
+     * Requirements: 3.2 - restore chat history on app startup
+     */
+    suspend fun initialize() {
+        trialService.initialize()
+    }
+    
+    /**
+     * Clears error state
+     */
+    fun clearError() {
+        trialService.clearError()
     }
 
     /**

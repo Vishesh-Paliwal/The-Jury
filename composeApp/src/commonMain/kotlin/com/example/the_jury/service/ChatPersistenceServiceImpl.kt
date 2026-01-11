@@ -26,7 +26,7 @@ class ChatPersistenceServiceImpl(
     
     override suspend fun saveMessage(message: ChatMessage): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            chatMessageQueries.insert(
+            chatMessageQueries.insertOrReplace(
                 id = message.id,
                 trialId = message.trialId,
                 sender = message.sender,
@@ -66,7 +66,8 @@ class ChatPersistenceServiceImpl(
             val personasJson = SerializationUtils.serializePersonas(trial.personas)
             val statusString = SerializationUtils.serializeTrialStatus(trial.status)
             
-            trialQueries.insert(
+            // Use INSERT OR REPLACE to handle both new and existing trials
+            trialQueries.insertOrReplace(
                 id = trial.id,
                 originalQuestion = trial.originalQuestion,
                 personas = personasJson,
@@ -76,7 +77,7 @@ class ChatPersistenceServiceImpl(
                 completedAt = trial.completedAt
             )
             
-            // Save all interactions
+            // Save all interactions (only new ones that don't exist yet)
             trial.interactions.forEach { interaction ->
                 saveTrialInteraction(interaction).getOrThrow()
             }
@@ -114,7 +115,8 @@ class ChatPersistenceServiceImpl(
     
     override suspend fun saveTrialInteraction(interaction: TrialInteraction): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            trialInteractionQueries.insert(
+            // Use INSERT OR REPLACE to handle duplicates gracefully
+            trialInteractionQueries.insertOrReplace(
                 id = interaction.id,
                 trialId = interaction.trialId,
                 type = SerializationUtils.serializeInteractionType(interaction.type),
@@ -175,6 +177,39 @@ class ChatPersistenceServiceImpl(
                 content = message.content,
                 streamingState = SerializationUtils.serializeStreamingState(message.streamingState),
                 id = message.id
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * Updates only the status of a trial (more efficient than full trial update)
+     * Requirements: 3.1 - immediate storage
+     */
+    suspend fun updateTrialStatus(trialId: String, status: TrialStatus): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val statusString = SerializationUtils.serializeTrialStatus(status)
+            trialQueries.updateStatus(status = statusString, id = trialId)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * Updates the verdict and completes a trial (more efficient than full trial update)
+     * Requirements: 3.1 - immediate storage
+     */
+    suspend fun updateTrialVerdict(trialId: String, verdict: String, completedAt: Long): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val statusString = SerializationUtils.serializeTrialStatus(TrialStatus.COMPLETED)
+            trialQueries.updateVerdict(
+                verdict = verdict,
+                status = statusString,
+                completedAt = completedAt,
+                id = trialId
             )
             Result.success(Unit)
         } catch (e: Exception) {

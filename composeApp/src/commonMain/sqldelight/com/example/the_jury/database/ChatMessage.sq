@@ -1,4 +1,4 @@
-CREATE TABLE ChatMessage (
+CREATE TABLE IF NOT EXISTS ChatMessage (
     id TEXT NOT NULL PRIMARY KEY,
     trialId TEXT NOT NULL,
     sender TEXT NOT NULL,
@@ -21,6 +21,10 @@ SELECT * FROM ChatMessage WHERE id = ?;
 
 insert:
 INSERT INTO ChatMessage(id, trialId, sender, content, timestamp, messageType, streamingState)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+insertOrReplace:
+INSERT OR REPLACE INTO ChatMessage(id, trialId, sender, content, timestamp, messageType, streamingState)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
 updateContent:

@@ -1,4 +1,4 @@
-CREATE TABLE Trial (
+CREATE TABLE IF NOT EXISTS Trial (
     id TEXT NOT NULL PRIMARY KEY,
     originalQuestion TEXT NOT NULL,
     personas TEXT NOT NULL, -- JSON serialized list of AgentPersona
@@ -17,6 +17,10 @@ SELECT * FROM Trial WHERE id = ?;
 
 insert:
 INSERT INTO Trial(id, originalQuestion, personas, status, verdict, createdAt, completedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+insertOrReplace:
+INSERT OR REPLACE INTO Trial(id, originalQuestion, personas, status, verdict, createdAt, completedAt)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
 update:

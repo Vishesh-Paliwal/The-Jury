@@ -84,8 +84,8 @@ class StreamingServiceImpl(
                     isComplete = false
                 ))
                 
-                // Add a small delay to simulate real streaming
-                delay(50)
+                // Add a delay to simulate real streaming (more visible)
+                delay(200)
             }
             
             // Emit completion
@@ -147,15 +147,16 @@ class StreamingServiceImpl(
         val words = fullResponse.split(" ")
         val chunks = mutableListOf<String>()
         
-        // Group words into chunks of 3-5 words each
+        // Group words into chunks of 2-4 words each for better streaming effect
         var currentChunk = ""
         var wordCount = 0
-        val chunkSize = (3..5).random()
         
         for (word in words) {
             currentChunk += if (currentChunk.isEmpty()) word else " $word"
             wordCount++
             
+            // Vary chunk size between 2-4 words for more natural streaming
+            val chunkSize = (2..4).random()
             if (wordCount >= chunkSize) {
                 chunks.add(currentChunk)
                 currentChunk = ""

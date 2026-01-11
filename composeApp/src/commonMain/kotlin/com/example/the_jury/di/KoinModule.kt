@@ -18,20 +18,20 @@ val appModule = module {
     // Persistence service (DatabaseDriverFactory is provided by platform modules)
     single<ChatPersistenceService> { ChatPersistenceServiceImpl(get()) }
     
-    // Get API key from platform-specific Config
-    single { 
-        val apiKey = Config.getApiKey()
-        AgentRunnerService(apiKey = apiKey) 
-    }
-    
     // Streaming service
     single<StreamingService> {
         val apiKey = Config.getApiKey()
         StreamingServiceImpl(apiKey = apiKey)
     }
     
+    // Get API key from platform-specific Config and inject StreamingService
+    single { 
+        val apiKey = Config.getApiKey()
+        AgentRunnerService(apiKey = apiKey, streamingService = get()) 
+    }
+    
     // Jury system services
-    single { TrialService() }
+    single { TrialService(get()) }
     single { 
         val apiKey = Config.getApiKey()
         ModeratorAgent(apiKey = apiKey)

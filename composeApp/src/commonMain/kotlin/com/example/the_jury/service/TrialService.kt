@@ -8,14 +8,50 @@ import kotlinx.coroutines.flow.update
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-class TrialService {
-    // In-memory storage for trials - in a real app this would be persisted
+class TrialService(
+    private val chatPersistenceService: ChatPersistenceService
+) {
+    // In-memory cache for trials - backed by persistent storage
     private val _trials = MutableStateFlow<Map<String, Trial>>(emptyMap())
     private val trials: StateFlow<Map<String, Trial>> = _trials.asStateFlow()
     
+    // Loading state for chat restoration
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    
+    // Error state for persistence operations
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+    
+    /**
+     * Initializes the service by loading existing trials from persistence
+     * Requirements: 3.2 - restore chat history on app startup
+     */
+    suspend fun initialize() {
+        _isLoading.value = true
+        _error.value = null
+        
+        try {
+            val result = chatPersistenceService.loadTrials()
+            result.fold(
+                onSuccess = { loadedTrials ->
+                    val trialsMap = loadedTrials.associateBy { it.id }
+                    _trials.value = trialsMap
+                },
+                onFailure = { exception ->
+                    _error.value = "Failed to load trials: ${exception.message}"
+                }
+            )
+        } catch (e: Exception) {
+            _error.value = "Failed to initialize trials: ${e.message}"
+        } finally {
+            _isLoading.value = false
+        }
+    }
+    
     /**
      * Creates a new trial session with the given question and personas
-     * Requirements: 1.1, 1.4, 3.1
+     * Requirements: 1.1, 1.4, 3.1 - immediate storage
      */
     @OptIn(ExperimentalUuidApi::class)
     suspend fun createTrial(question: String, personas: List<AgentPersona>): Trial {
@@ -30,42 +66,65 @@ class TrialService {
             completedAt = null
         )
         
-        _trials.update { currentTrials ->
-            currentTrials + (trial.id to trial)
-        }
+        // Save to persistence layer immediately
+        val saveResult = chatPersistenceService.saveTrial(trial)
+        saveResult.fold(
+            onSuccess = {
+                // Update in-memory cache
+                _trials.update { currentTrials ->
+                    currentTrials + (trial.id to trial)
+                }
+            },
+            onFailure = { exception ->
+                _error.value = "Failed to save trial: ${exception.message}"
+                throw exception
+            }
+        )
         
         return trial
     }
     
     /**
      * Adds an interaction to an existing trial
-     * Requirements: 3.1, 3.2, 3.5
+     * Requirements: 3.1, 3.2, 3.5 - immediate storage and persistence
      */
     suspend fun addInteraction(trialId: String, interaction: TrialInteraction): Trial? {
         var updatedTrial: Trial? = null
         
-        _trials.update { currentTrials ->
-            val trial = currentTrials[trialId]
-            if (trial != null) {
-                updatedTrial = trial.copy(
-                    interactions = trial.interactions + interaction
-                )
-                currentTrials + (trialId to updatedTrial!!)
-            } else {
-                currentTrials
+        // Save interaction to persistence layer first
+        val saveResult = chatPersistenceService.saveTrialInteraction(interaction)
+        saveResult.fold(
+            onSuccess = {
+                // Update in-memory cache
+                _trials.update { currentTrials ->
+                    val trial = currentTrials[trialId]
+                    if (trial != null) {
+                        updatedTrial = trial.copy(
+                            interactions = trial.interactions + interaction
+                        )
+                        currentTrials + (trialId to updatedTrial!!)
+                    } else {
+                        currentTrials
+                    }
+                }
+            },
+            onFailure = { exception ->
+                _error.value = "Failed to save interaction: ${exception.message}"
+                return null
             }
-        }
+        )
         
         return updatedTrial
     }
     
     /**
      * Updates the status of a trial
-     * Requirements: 1.4, 3.1
+     * Requirements: 1.4, 3.1 - immediate storage
      */
     suspend fun updateTrialStatus(trialId: String, status: TrialStatus): Trial? {
         var updatedTrial: Trial? = null
         
+        // Update in-memory cache first
         _trials.update { currentTrials ->
             val trial = currentTrials[trialId]
             if (trial != null) {
@@ -76,23 +135,44 @@ class TrialService {
             }
         }
         
+        // Save updated status to persistence layer using efficient update
+        if (updatedTrial != null) {
+            val persistenceService = chatPersistenceService as? ChatPersistenceServiceImpl
+            val saveResult = if (persistenceService != null) {
+                // Use efficient status update if available
+                persistenceService.updateTrialStatus(trialId, status)
+            } else {
+                // Fallback to full trial save
+                chatPersistenceService.saveTrial(updatedTrial!!)
+            }
+            
+            saveResult.fold(
+                onSuccess = { /* Success - trial status saved */ },
+                onFailure = { exception ->
+                    _error.value = "Failed to save trial status: ${exception.message}"
+                }
+            )
+        }
+        
         return updatedTrial
     }
     
     /**
      * Completes a trial with a final verdict
-     * Requirements: 1.4, 3.1
+     * Requirements: 1.4, 3.1 - immediate storage
      */
     suspend fun completeTrial(trialId: String, verdict: String): Trial? {
+        val completedAt = System.currentTimeMillis()
         var updatedTrial: Trial? = null
         
+        // Update in-memory cache first
         _trials.update { currentTrials ->
             val trial = currentTrials[trialId]
             if (trial != null) {
                 updatedTrial = trial.copy(
                     status = TrialStatus.COMPLETED,
                     verdict = verdict,
-                    completedAt = System.currentTimeMillis()
+                    completedAt = completedAt
                 )
                 currentTrials + (trialId to updatedTrial!!)
             } else {
@@ -100,14 +180,56 @@ class TrialService {
             }
         }
         
+        // Save completed trial to persistence layer using efficient update
+        if (updatedTrial != null) {
+            val persistenceService = chatPersistenceService as? ChatPersistenceServiceImpl
+            val saveResult = if (persistenceService != null) {
+                // Use efficient verdict update if available
+                persistenceService.updateTrialVerdict(trialId, verdict, completedAt)
+            } else {
+                // Fallback to full trial save
+                chatPersistenceService.saveTrial(updatedTrial!!)
+            }
+            
+            saveResult.fold(
+                onSuccess = { /* Success - trial completed */ },
+                onFailure = { exception ->
+                    _error.value = "Failed to save completed trial: ${exception.message}"
+                }
+            )
+        }
+        
         return updatedTrial
     }
     
     /**
      * Gets a trial by ID
+     * Requirements: 3.2 - data retrieval from persistence
      */
     suspend fun getTrial(trialId: String): Trial? {
-        return _trials.value[trialId]
+        // First check in-memory cache
+        val cachedTrial = _trials.value[trialId]
+        if (cachedTrial != null) {
+            return cachedTrial
+        }
+        
+        // If not in cache, try to load from persistence
+        val result = chatPersistenceService.getTrial(trialId)
+        return result.fold(
+            onSuccess = { trial ->
+                // Update cache if found
+                trial?.let { 
+                    _trials.update { currentTrials ->
+                        currentTrials + (trialId to it)
+                    }
+                }
+                trial
+            },
+            onFailure = { exception ->
+                _error.value = "Failed to load trial: ${exception.message}"
+                null
+            }
+        )
     }
     
     /**
@@ -130,14 +252,34 @@ class TrialService {
     
     /**
      * Gets all trials (for debugging/admin purposes)
+     * Requirements: 3.2 - data retrieval from persistence
      */
     suspend fun getAllTrials(): List<Trial> {
-        return _trials.value.values.toList()
+        // Return from in-memory cache if available
+        val cachedTrials = _trials.value.values.toList()
+        if (cachedTrials.isNotEmpty()) {
+            return cachedTrials
+        }
+        
+        // Otherwise load from persistence
+        val result = chatPersistenceService.loadTrials()
+        return result.fold(
+            onSuccess = { trials ->
+                // Update cache
+                val trialsMap = trials.associateBy { it.id }
+                _trials.value = trialsMap
+                trials
+            },
+            onFailure = { exception ->
+                _error.value = "Failed to load all trials: ${exception.message}"
+                emptyList()
+            }
+        )
     }
     
     /**
      * Marks a trial as failed with error information
-     * Requirements: 7.5 (error handling)
+     * Requirements: 7.5 (error handling), 3.1 - immediate storage
      */
     suspend fun failTrial(trialId: String, errorMessage: String): Trial? {
         var updatedTrial: Trial? = null
@@ -166,6 +308,29 @@ class TrialService {
             }
         }
         
+        // Save failed trial to persistence layer
+        updatedTrial?.let { trial ->
+            // Save the error interaction first
+            val errorInteraction = trial.interactions.last()
+            chatPersistenceService.saveTrialInteraction(errorInteraction)
+            
+            // Then save the updated trial
+            val saveResult = chatPersistenceService.saveTrial(trial)
+            saveResult.fold(
+                onSuccess = { /* Success - trial saved */ },
+                onFailure = { exception ->
+                    _error.value = "Failed to save failed trial: ${exception.message}"
+                }
+            )
+        }
+        
         return updatedTrial
+    }
+    
+    /**
+     * Clears error state
+     */
+    fun clearError() {
+        _error.value = null
     }
 }

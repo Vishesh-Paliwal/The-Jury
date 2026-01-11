@@ -1,4 +1,4 @@
-CREATE TABLE TrialInteraction (
+CREATE TABLE IF NOT EXISTS TrialInteraction (
     id TEXT NOT NULL PRIMARY KEY,
     trialId TEXT NOT NULL,
     type TEXT NOT NULL,
@@ -22,6 +22,10 @@ SELECT * FROM TrialInteraction WHERE id = ?;
 
 insert:
 INSERT INTO TrialInteraction(id, trialId, type, speaker, content, targetPersona, timestamp, roundNumber)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+insertOrReplace:
+INSERT OR REPLACE INTO TrialInteraction(id, trialId, type, speaker, content, targetPersona, timestamp, roundNumber)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteByTrialId:
