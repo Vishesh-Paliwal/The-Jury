@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -26,6 +27,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import com.example.the_jury.model.*
@@ -628,79 +633,137 @@ private fun InteractionCard(
     personas: List<AgentPersona>
 ) {
     val isModeratorSpeaking = interaction.speaker == "moderator"
+    // Fix: Look up persona by ID first, then by name as fallback
     val persona = if (!isModeratorSpeaking) {
-        personas.find { it.name == interaction.speaker || it.id == interaction.speaker }
+        personas.find { it.id == interaction.speaker } 
+            ?: personas.find { it.name == interaction.speaker }
     } else null
     
+    val speakerDisplayName = when {
+        isModeratorSpeaking -> "Moderator"
+        persona != null -> persona.name
+        else -> interaction.speaker // fallback to raw value
+    }
+    
+    // Fix: Change verdict color from tertiary (often red-ish) to a more positive color
     val backgroundColor = when (interaction.type) {
         InteractionType.INITIAL_QUESTION -> MaterialTheme.colorScheme.primaryContainer
-        InteractionType.VERDICT -> MaterialTheme.colorScheme.tertiaryContainer
-        InteractionType.FOLLOW_UP_QUESTION -> MaterialTheme.colorScheme.secondaryContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
+        InteractionType.VERDICT -> MaterialTheme.colorScheme.secondaryContainer // Changed from tertiaryContainer
+        InteractionType.FOLLOW_UP_QUESTION -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.surface
     }
+    
+    // Parse content to replace persona IDs with names
+    val displayContent = replacePersonaIdsWithNames(interaction.content, personas)
     
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = backgroundColor)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // Speaker and timestamp header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (isModeratorSpeaking) Icons.Default.Gavel else Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+        // Fix: Make text selectable
+        SelectionContainer {
+            Column(modifier = Modifier.padding(12.dp)) {
+                // Speaker and timestamp header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (isModeratorSpeaking) Icons.Default.Gavel else Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = speakerDisplayName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    
                     Text(
-                        text = if (isModeratorSpeaking) "Moderator" else (persona?.name ?: interaction.speaker),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        text = formatTimestamp(interaction.timestamp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 
+                // Interaction type badge
+                if (interaction.type != InteractionType.INITIAL_RESPONSE && interaction.type != InteractionType.FOLLOW_UP_RESPONSE) {
+                    Text(
+                        text = interaction.type.name.replace('_', ' '),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+                
+                // Content with markdown bold support
                 Text(
-                    text = formatTimestamp(interaction.timestamp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = parseSimpleMarkdown(displayContent),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp)
                 )
-            }
-            
-            // Interaction type badge
-            if (interaction.type != InteractionType.INITIAL_RESPONSE && interaction.type != InteractionType.FOLLOW_UP_RESPONSE) {
+                
+                // Round indicator
                 Text(
-                    text = interaction.type.name.replace('_', ' '),
+                    text = "Round ${interaction.roundNumber}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
+        }
+    }
+}
+
+/**
+ * Replace persona IDs with their display names in text content
+ */
+private fun replacePersonaIdsWithNames(content: String, personas: List<AgentPersona>): String {
+    var result = content
+    for (persona in personas) {
+        // Replace ID references with names
+        result = result.replace(persona.id, persona.name)
+    }
+    return result
+}
+
+/**
+ * Parse simple markdown (bold with ** or __) into AnnotatedString
+ */
+@Composable
+private fun parseSimpleMarkdown(text: String): AnnotatedString {
+    return buildAnnotatedString {
+        var currentIndex = 0
+        val boldPattern = Regex("\\*\\*(.+?)\\*\\*|__(.+?)__")
+        
+        boldPattern.findAll(text).forEach { match ->
+            // Add text before the match
+            if (match.range.first > currentIndex) {
+                append(text.substring(currentIndex, match.range.first))
+            }
             
-            // Content
-            Text(
-                text = interaction.content,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 8.dp)
-            )
+            // Add bold text (group 1 for **, group 2 for __)
+            val boldText = match.groupValues[1].ifEmpty { match.groupValues[2] }
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                append(boldText)
+            }
             
-            // Round indicator
-            Text(
-                text = "Round ${interaction.roundNumber}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
+            currentIndex = match.range.last + 1
+        }
+        
+        // Add remaining text
+        if (currentIndex < text.length) {
+            append(text.substring(currentIndex))
         }
     }
 }
