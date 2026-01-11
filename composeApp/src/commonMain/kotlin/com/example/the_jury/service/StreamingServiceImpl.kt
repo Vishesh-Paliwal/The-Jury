@@ -151,13 +151,17 @@ class StreamingServiceImpl(
         var currentChunk = ""
         var wordCount = 0
         
-        for (word in words) {
+        for ((index, word) in words.withIndex()) {
             currentChunk += if (currentChunk.isEmpty()) word else " $word"
             wordCount++
             
             // Vary chunk size between 2-4 words for more natural streaming
             val chunkSize = (2..4).random()
             if (wordCount >= chunkSize) {
+                // Add trailing space if not the last chunk
+                if (index < words.size - 1) {
+                    currentChunk += " "
+                }
                 chunks.add(currentChunk)
                 currentChunk = ""
                 wordCount = 0

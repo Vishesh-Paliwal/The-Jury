@@ -4,7 +4,7 @@ import com.example.the_jury.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -60,11 +60,11 @@ class JuryService(
     suspend fun conductTrial(
         question: String,
         personas: List<AgentPersona>
-    ): Flow<TrialState> = flow {
+    ): Flow<TrialState> = channelFlow {
         try {
             // Create initial trial
             val trial = trialService.createTrial(question, personas)
-            emit(TrialState(trial = trial, currentlyThinking = emptyList(), isComplete = false))
+            send(TrialState(trial = trial, currentlyThinking = emptyList(), isComplete = false))
 
             // Add initial question interaction
             val initialQuestionInteraction = TrialInteraction(
@@ -75,41 +75,59 @@ class JuryService(
                 roundNumber = 1
             )
             trialService.addInteraction(trial.id, initialQuestionInteraction)
+            
+            // Emit with the question added
+            val trialWithQuestion = trialService.getTrial(trial.id) ?: return@channelFlow
+            send(TrialState(trial = trialWithQuestion, currentlyThinking = emptyList(), isComplete = false))
 
             // Update status to gathering initial responses
             trialService.updateTrialStatus(trial.id, TrialStatus.GATHERING_INITIAL_RESPONSES)
-            val updatedTrial = trialService.getTrial(trial.id) ?: return@flow
-            emit(TrialState(
+            val updatedTrial = trialService.getTrial(trial.id) ?: return@channelFlow
+            send(TrialState(
                 trial = updatedTrial,
                 currentlyThinking = personas.map { it.id },
                 isComplete = false
             ))
 
-            // Gather initial responses from all personas
-            val initialResponses = gatherInitialResponses(trial.id, question, personas)
-            if (initialResponses.isEmpty()) {
-                trialService.failTrial(trial.id, "Failed to gather initial responses from personas")
-                val failedTrial = trialService.getTrial(trial.id) ?: return@flow
-                emit(TrialState(trial = failedTrial, currentlyThinking = emptyList(), isComplete = true))
-                return@flow
-            }
-
-            // Add initial responses to trial
-            initialResponses.forEach { response ->
+            // Gather initial responses from all personas - streaming each as it completes
+            val initialResponses = gatherInitialResponsesStreaming(trial.id, question, personas) { personaId, response ->
+                // Callback when each persona completes - add interaction immediately
                 val responseInteraction = TrialInteraction(
                     trialId = trial.id,
                     type = InteractionType.INITIAL_RESPONSE,
-                    speaker = response.personaId,
-                    content = response.response,
+                    speaker = personaId,
+                    content = response,
                     roundNumber = 1
                 )
                 trialService.addInteraction(trial.id, responseInteraction)
+                
+                // Get updated trial and emit
+                val currentTrial = trialService.getTrial(trial.id)
+                if (currentTrial != null) {
+                    // Remove this persona from thinking list
+                    val stillThinking = personas.filter { p -> 
+                        p.id != personaId && 
+                        currentTrial.interactions.none { it.speaker == p.id && it.roundNumber == 1 }
+                    }.map { it.id }
+                    trySend(TrialState(
+                        trial = currentTrial,
+                        currentlyThinking = stillThinking,
+                        isComplete = false
+                    ))
+                }
+            }
+            
+            if (initialResponses.isEmpty()) {
+                trialService.failTrial(trial.id, "Failed to gather initial responses from personas")
+                val failedTrial = trialService.getTrial(trial.id) ?: return@channelFlow
+                send(TrialState(trial = failedTrial, currentlyThinking = emptyList(), isComplete = true))
+                return@channelFlow
             }
 
             // Update status to deliberating
             trialService.updateTrialStatus(trial.id, TrialStatus.DELIBERATING)
-            val deliberatingTrial = trialService.getTrial(trial.id) ?: return@flow
-            emit(TrialState(
+            val deliberatingTrial = trialService.getTrial(trial.id) ?: return@channelFlow
+            send(TrialState(
                 trial = deliberatingTrial,
                 currentlyThinking = emptyList(),
                 isComplete = false
@@ -120,36 +138,27 @@ class JuryService(
             var allInteractions = deliberatingTrial.interactions
 
             while (currentRound <= MAX_DELIBERATION_ROUNDS) {
+                // Show moderator thinking while deciding whether to continue
+                send(TrialState(
+                    trial = trialService.getTrial(trial.id) ?: return@channelFlow,
+                    currentlyThinking = listOf("moderator"),
+                    isComplete = false
+                ))
+                
                 // Check if we should continue deliberation
-                val shouldContinue = moderatorAgent.shouldContinueDeliberation(allInteractions, currentRound - 1)
+                val shouldContinue = moderatorAgent.shouldContinueDeliberation(allInteractions, currentRound - 1, personas)
                 if (!shouldContinue) {
                     break
                 }
 
-                // Generate follow-up questions
-                val followUpQuestions = moderatorAgent.generateFollowUpQuestions(question, initialResponses)
+                // Generate follow-up questions (moderator still thinking)
+                val followUpQuestions = moderatorAgent.generateFollowUpQuestions(question, initialResponses, personas)
                 if (followUpQuestions.isEmpty()) {
                     break
                 }
 
-                // Emit thinking state for follow-up responses
-                val thinkingTrial = trialService.getTrial(trial.id) ?: return@flow
-                emit(TrialState(
-                    trial = thinkingTrial,
-                    currentlyThinking = followUpQuestions.map { it.targetPersonaId },
-                    isComplete = false
-                ))
-
-                // Ask follow-up questions and gather responses
-                val followUpResponses = gatherFollowUpResponses(
-                    trial.id,
-                    followUpQuestions,
-                    personas,
-                    currentRound
-                )
-
-                // Add follow-up interactions to trial
-                followUpQuestions.forEach { followUp ->
+                // Add follow-up questions to trial first (moderator asks)
+                for (followUp in followUpQuestions) {
                     val questionInteraction = TrialInteraction(
                         trialId = trial.id,
                         type = InteractionType.FOLLOW_UP_QUESTION,
@@ -159,24 +168,57 @@ class JuryService(
                         roundNumber = currentRound
                     )
                     trialService.addInteraction(trial.id, questionInteraction)
+                    
+                    // Emit after each question is added
+                    val trialAfterQuestion = trialService.getTrial(trial.id) ?: continue
+                    send(TrialState(
+                        trial = trialAfterQuestion,
+                        currentlyThinking = followUpQuestions.map { it.targetPersonaId },
+                        isComplete = false
+                    ))
                 }
 
-                followUpResponses.forEach { response ->
+                // Gather follow-up responses - streaming each as it completes
+                val followUpResponses = gatherFollowUpResponsesStreaming(
+                    trial.id,
+                    followUpQuestions,
+                    personas,
+                    currentRound
+                ) { personaId, response ->
+                    // Callback when each persona responds
                     val responseInteraction = TrialInteraction(
                         trialId = trial.id,
                         type = InteractionType.FOLLOW_UP_RESPONSE,
-                        speaker = response.personaId,
-                        content = response.response,
+                        speaker = personaId,
+                        content = response,
                         roundNumber = currentRound
                     )
                     trialService.addInteraction(trial.id, responseInteraction)
+                    
+                    // Get updated trial and emit
+                    val currentTrial = trialService.getTrial(trial.id)
+                    if (currentTrial != null) {
+                        val stillThinking = followUpQuestions.filter { fq ->
+                            fq.targetPersonaId != personaId &&
+                            currentTrial.interactions.none { 
+                                it.speaker == fq.targetPersonaId && 
+                                it.roundNumber == currentRound && 
+                                it.type == InteractionType.FOLLOW_UP_RESPONSE 
+                            }
+                        }.map { it.targetPersonaId }
+                        trySend(TrialState(
+                            trial = currentTrial,
+                            currentlyThinking = stillThinking,
+                            isComplete = false
+                        ))
+                    }
                 }
 
                 // Update interactions for next iteration
-                val updatedTrialAfterRound = trialService.getTrial(trial.id) ?: return@flow
+                val updatedTrialAfterRound = trialService.getTrial(trial.id) ?: return@channelFlow
                 allInteractions = updatedTrialAfterRound.interactions
                 
-                emit(TrialState(
+                send(TrialState(
                     trial = updatedTrialAfterRound,
                     currentlyThinking = emptyList(),
                     isComplete = false
@@ -187,14 +229,14 @@ class JuryService(
 
             // Generate final verdict
             trialService.updateTrialStatus(trial.id, TrialStatus.GENERATING_VERDICT)
-            val verdictGeneratingTrial = trialService.getTrial(trial.id) ?: return@flow
-            emit(TrialState(
+            val verdictGeneratingTrial = trialService.getTrial(trial.id) ?: return@channelFlow
+            send(TrialState(
                 trial = verdictGeneratingTrial,
                 currentlyThinking = listOf("moderator"),
                 isComplete = false
             ))
 
-            val finalVerdict = moderatorAgent.synthesizeVerdict(question, allInteractions)
+            val finalVerdict = moderatorAgent.synthesizeVerdict(question, allInteractions, personas)
             
             // Add verdict interaction
             val verdictInteraction = TrialInteraction(
@@ -209,7 +251,7 @@ class JuryService(
             // Complete the trial
             val completedTrial = trialService.completeTrial(trial.id, finalVerdict)
             if (completedTrial != null) {
-                emit(TrialState(
+                send(TrialState(
                     trial = completedTrial,
                     currentlyThinking = emptyList(),
                     isComplete = true
@@ -224,7 +266,7 @@ class JuryService(
                 currentTrial?.let { trial ->
                     val failedTrial = trialService.failTrial(trial.id, e.message ?: "Unknown error")
                     if (failedTrial != null) {
-                        emit(TrialState(
+                        send(TrialState(
                             trial = failedTrial,
                             currentlyThinking = emptyList(),
                             isComplete = true
@@ -277,6 +319,51 @@ class JuryService(
     }
 
     /**
+     * Gathers initial responses with streaming - calls back as each agent completes
+     * Requirements: 2.1, 4.1 - incremental display
+     */
+    private suspend fun gatherInitialResponsesStreaming(
+        trialId: String,
+        question: String,
+        personas: List<AgentPersona>,
+        onResponseReceived: suspend (personaId: String, response: String) -> Unit
+    ): List<AgentResult> = withContext(Dispatchers.IO) {
+        return@withContext withTimeoutOrNull(TOTAL_TRIAL_TIMEOUT_MS) {
+            try {
+                val completedResponses = mutableListOf<AgentResult>()
+                val completedPersonas = mutableSetOf<String>()
+                
+                // Use streaming service to get responses as they complete
+                agentRunnerService.runAgentsWithStreaming(question, personas).collect { results ->
+                    // Check for newly completed responses
+                    results.forEach { result ->
+                        if (!result.isLoading && 
+                            result.error == null && 
+                            result.response.isNotBlank() &&
+                            !completedPersonas.contains(result.personaId)) {
+                            
+                            // Mark as completed and callback
+                            completedPersonas.add(result.personaId)
+                            completedResponses.add(result)
+                            onResponseReceived(result.personaId, result.response)
+                        }
+                    }
+                    
+                    // Stop collecting when all personas have responded
+                    if (completedPersonas.size >= personas.size || results.none { it.isLoading }) {
+                        return@collect
+                    }
+                }
+                
+                completedResponses
+            } catch (e: Exception) {
+                e.printStackTrace()
+                emptyList()
+            }
+        } ?: emptyList()
+    }
+
+    /**
      * Gathers follow-up responses from targeted personas
      * Requirements: 2.4, 6.4, 7.5
      */
@@ -310,6 +397,65 @@ class JuryService(
                         } catch (e: Exception) {
                             e.printStackTrace()
                             // Continue with other questions even if one fails
+                        }
+                    }
+                }
+                
+                responses
+            } catch (e: Exception) {
+                e.printStackTrace()
+                emptyList()
+            }
+        } ?: emptyList()
+    }
+
+    /**
+     * Gathers follow-up responses with streaming - calls back as each agent completes
+     * Requirements: 2.4, 4.1 - incremental display
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun gatherFollowUpResponsesStreaming(
+        trialId: String,
+        followUpQuestions: List<FollowUpQuestion>,
+        personas: List<AgentPersona>,
+        roundNumber: Int,
+        onResponseReceived: suspend (personaId: String, response: String) -> Unit
+    ): List<AgentResult> = withContext(Dispatchers.IO) {
+        return@withContext withTimeoutOrNull(AGENT_TIMEOUT_MS * followUpQuestions.size) {
+            try {
+                val responses = mutableListOf<AgentResult>()
+                val targetPersonas = followUpQuestions.mapNotNull { followUp ->
+                    personas.find { it.id == followUp.targetPersonaId }
+                }
+                
+                if (targetPersonas.isEmpty()) return@withTimeoutOrNull emptyList()
+                
+                // Build combined prompt for each persona
+                val personaQuestions = followUpQuestions.associate { followUp ->
+                    followUp.targetPersonaId to followUp.question
+                }
+                
+                val completedPersonas = mutableSetOf<String>()
+                
+                // Run all target personas with streaming
+                targetPersonas.forEach { persona ->
+                    val question = personaQuestions[persona.id] ?: return@forEach
+                    
+                    agentRunnerService.runAgentsWithStreaming(question, listOf(persona)).collect { results ->
+                        results.forEach { result ->
+                            if (!result.isLoading && 
+                                result.error == null && 
+                                result.response.isNotBlank() &&
+                                !completedPersonas.contains(result.personaId)) {
+                                
+                                completedPersonas.add(result.personaId)
+                                responses.add(result)
+                                onResponseReceived(result.personaId, result.response)
+                            }
+                        }
+                        
+                        if (results.none { it.isLoading }) {
+                            return@collect
                         }
                     }
                 }

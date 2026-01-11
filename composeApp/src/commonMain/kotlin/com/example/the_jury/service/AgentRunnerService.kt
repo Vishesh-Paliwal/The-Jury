@@ -83,7 +83,14 @@ class AgentRunnerService(
                                 else -> {
                                     // Accumulate streaming content
                                     val currentContent = accumulatedContent[persona.id] ?: ""
-                                    val newContent = currentContent + streamingResponse.content
+                                    // Add space between chunks if needed
+                                    val separator = if (currentContent.isNotEmpty() && 
+                                                       !currentContent.endsWith(" ") && 
+                                                       !currentContent.endsWith("\n") &&
+                                                       streamingResponse.content.isNotEmpty() &&
+                                                       !streamingResponse.content.startsWith(" ") &&
+                                                       !streamingResponse.content.startsWith("\n")) " " else ""
+                                    val newContent = currentContent + separator + streamingResponse.content
                                     accumulatedContent[persona.id] = newContent
                                     
                                     AgentResult(

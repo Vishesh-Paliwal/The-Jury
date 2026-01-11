@@ -3,6 +3,7 @@ package com.example.the_jury.service
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.llms.all.simpleGoogleAIExecutor
+import com.example.the_jury.model.AgentPersona
 import com.example.the_jury.model.AgentResult
 import com.example.the_jury.model.FollowUpQuestion
 import com.example.the_jury.model.TrialInteraction
@@ -25,13 +26,36 @@ class ModeratorAgent(
     }
 
     /**
+     * Helper to get persona name from ID
+     */
+    private fun getPersonaName(personaId: String, personas: List<AgentPersona>): String {
+        return personas.find { it.id == personaId }?.name ?: personaId
+    }
+
+    /**
+     * Helper to get persona ID from name (for parsing AI responses)
+     */
+    private fun getPersonaId(nameOrId: String, personas: List<AgentPersona>): String {
+        // First check if it's already an ID
+        personas.find { it.id == nameOrId }?.let { return it.id }
+        // Then check by name
+        personas.find { it.name.equals(nameOrId, ignoreCase = true) }?.let { return it.id }
+        // Return as-is if not found
+        return nameOrId
+    }
+
+    /**
      * Generates follow-up questions based on initial responses from personas
      * Requirements: 2.2, 6.4
      */
     suspend fun generateFollowUpQuestions(
         originalQuestion: String,
-        responses: List<AgentResult>
+        responses: List<AgentResult>,
+        personas: List<AgentPersona> = emptyList()
     ): List<FollowUpQuestion> = withContext(Dispatchers.IO) {
+        // Build persona name list for the prompt
+        val personaNames = personas.map { it.name }
+        
         val systemPrompt = """
             You are an intelligent moderator facilitating a jury deliberation. Your role is to analyze responses from different personas and generate targeted follow-up questions to clarify, resolve conflicts, or gather missing information.
 
@@ -42,12 +66,15 @@ class ModeratorAgent(
             4. Avoid redundant questions already answered
             5. Ask for specific examples or clarification when responses are vague
             6. Identify contradictions with previous context and request explanations
+            7. IMPORTANT: Use the exact persona NAMES provided, not IDs
+
+            Available personas: ${personaNames.joinToString(", ")}
 
             Your response should be a JSON array of follow-up questions in this format:
             [
                 {
                     "question": "Specific question text",
-                    "targetPersonaId": "persona_id",
+                    "targetPersonaName": "exact persona name from the list above",
                     "reasoning": "Why this question is needed"
                 }
             ]
@@ -62,16 +89,17 @@ class ModeratorAgent(
             appendLine("\nPersona Responses:")
             responses.forEach { result ->
                 if (result.error == null && result.response.isNotBlank()) {
-                    appendLine("- Persona ${result.personaId}: ${result.response}")
+                    val personaName = getPersonaName(result.personaId, personas)
+                    appendLine("- $personaName: ${result.response}")
                 }
             }
-            appendLine("\nAnalyze these responses and generate follow-up questions if needed.")
+            appendLine("\nAnalyze these responses and generate follow-up questions if needed. Use the exact persona names in your response.")
         }
 
         try {
             val response = agent.run(prompt)
             // Parse the JSON response to extract follow-up questions
-            parseFollowUpQuestions(response)
+            parseFollowUpQuestions(response, personas)
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
@@ -84,7 +112,8 @@ class ModeratorAgent(
      */
     suspend fun shouldContinueDeliberation(
         interactions: List<TrialInteraction>,
-        roundCount: Int
+        roundCount: Int,
+        personas: List<AgentPersona> = emptyList()
     ): Boolean = withContext(Dispatchers.IO) {
         // Hard limit of 5 rounds as per requirements
         if (roundCount >= 5) return@withContext false
@@ -108,7 +137,9 @@ class ModeratorAgent(
             appendLine("Current Round: $roundCount/5")
             appendLine("\nTrial Interactions:")
             interactions.forEach { interaction ->
-                appendLine("- ${interaction.speaker} (Round ${interaction.roundNumber}): ${interaction.content}")
+                val speakerName = if (interaction.speaker == "moderator") "Moderator" 
+                                  else getPersonaName(interaction.speaker, personas)
+                appendLine("- $speakerName (Round ${interaction.roundNumber}): ${interaction.content}")
             }
             appendLine("\nShould deliberation continue?")
         }
@@ -128,14 +159,15 @@ class ModeratorAgent(
      */
     suspend fun synthesizeVerdict(
         originalQuestion: String,
-        allInteractions: List<TrialInteraction>
+        allInteractions: List<TrialInteraction>,
+        personas: List<AgentPersona> = emptyList()
     ): String = withContext(Dispatchers.IO) {
         val systemPrompt = """
             You are an intelligent moderator synthesizing a final verdict from a jury deliberation. Your role is to create a comprehensive answer that addresses the original question by incorporating insights from all personas.
 
             Guidelines:
             1. Address the original question directly and comprehensively
-            2. Reference key points from different personas
+            2. Reference key points from different personas BY NAME
             3. Present different viewpoints with reasoning when personas disagree
             4. Consider how the answer relates to any initial context provided
             5. Provide a clear, well-reasoned conclusion
@@ -150,9 +182,11 @@ class ModeratorAgent(
             appendLine("Original Question: $originalQuestion")
             appendLine("\nComplete Trial Transcript:")
             allInteractions.forEach { interaction ->
-                appendLine("${interaction.speaker} (Round ${interaction.roundNumber}, ${interaction.type}): ${interaction.content}")
+                val speakerName = if (interaction.speaker == "moderator") "Moderator" 
+                                  else getPersonaName(interaction.speaker, personas)
+                appendLine("$speakerName (Round ${interaction.roundNumber}, ${interaction.type}): ${interaction.content}")
             }
-            appendLine("\nSynthesize all perspectives into a comprehensive final verdict that addresses the original question.")
+            appendLine("\nSynthesize all perspectives into a comprehensive final verdict that addresses the original question. Reference personas by their names.")
         }
 
         try {
@@ -163,7 +197,7 @@ class ModeratorAgent(
         }
     }
 
-    private fun parseFollowUpQuestions(response: String): List<FollowUpQuestion> {
+    private fun parseFollowUpQuestions(response: String, personas: List<AgentPersona>): List<FollowUpQuestion> {
         return try {
             // Try to extract JSON from the response
             val jsonStart = response.indexOf('[')
@@ -175,10 +209,14 @@ class ModeratorAgent(
                 
                 questions.mapNotNull { questionMap ->
                     val question = questionMap["question"]
-                    val targetPersonaId = questionMap["targetPersonaId"]
+                    // Support both old "targetPersonaId" and new "targetPersonaName" fields
+                    val targetPersonaNameOrId = questionMap["targetPersonaName"] 
+                        ?: questionMap["targetPersonaId"]
                     val reasoning = questionMap["reasoning"]
                     
-                    if (question != null && targetPersonaId != null && reasoning != null) {
+                    if (question != null && targetPersonaNameOrId != null && reasoning != null) {
+                        // Convert name to ID for internal use
+                        val targetPersonaId = getPersonaId(targetPersonaNameOrId, personas)
                         FollowUpQuestion(
                             question = question,
                             targetPersonaId = targetPersonaId,
