@@ -38,6 +38,7 @@ import com.example.the_jury.repo.PersonaRepository
 import com.example.the_jury.service.JuryService
 import com.example.the_jury.service.AgentRunnerService
 import com.example.the_jury.service.TrialService
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import com.example.the_jury.ui.components.StreamingAgentResultCard
@@ -64,6 +65,9 @@ class JuryScreen : Screen {
         var isRunning by remember { mutableStateOf(false) }
         var executionMode by rememberSaveable { mutableStateOf(ExecutionMode.PARALLEL) }
         val parallelGridState = rememberLazyGridState()
+        
+        // Job reference to cancel ongoing trial/parallel execution
+        var currentJob by remember { mutableStateOf<Job?>(null) }
         
         // Past trials state
         var pastTrials by remember { mutableStateOf<List<Trial>>(emptyList()) }
@@ -143,6 +147,11 @@ class JuryScreen : Screen {
                         isExpanded = showPastTrials,
                         onToggleExpand = { showPastTrials = !showPastTrials },
                         onSelectTrial = { trial ->
+                            // Cancel any running job when selecting a past trial
+                            currentJob?.cancel()
+                            currentJob = null
+                            isRunning = false
+                            
                             selectedPastTrial = trial
                             currentTrialState = TrialState(trial = trial, isComplete = true)
                             executionMode = ExecutionMode.JURY
@@ -185,13 +194,15 @@ class JuryScreen : Screen {
                     onClick = {
                         if (juryQuestion.isNotBlank()) {
                             isRunning = true
-                            scope.launch {
+                            selectedPastTrial = null // Clear any selected past trial
+                            currentJob = scope.launch {
                                 if (executionMode == ExecutionMode.JURY) {
                                     juryService.conductTrial(juryQuestion, personas)
                                         .collect { trialState ->
                                             currentTrialState = trialState
                                             if (trialState.isComplete) {
                                                 isRunning = false
+                                                currentJob = null
                                                 pastTrials = trialService.getAllTrials()
                                             }
                                         }
@@ -201,6 +212,7 @@ class JuryScreen : Screen {
                                             parallelResults = newResults
                                             if (newResults.none { it.isLoading }) {
                                                 isRunning = false
+                                                currentJob = null
                                             }
                                         }
                                 }
@@ -247,6 +259,10 @@ class JuryScreen : Screen {
                                 if (isRunning) {
                                     Button(
                                         onClick = {
+                                            // Cancel the running job first to stop flow collection
+                                            currentJob?.cancel()
+                                            currentJob = null
+                                            
                                             scope.launch {
                                                 if (executionMode == ExecutionMode.JURY) {
                                                     currentTrialState?.trial?.id?.let { trialId ->
@@ -257,6 +273,8 @@ class JuryScreen : Screen {
                                                     parallelResults = emptyList()
                                                 }
                                                 isRunning = false
+                                                // Refresh past trials to show the stopped trial
+                                                pastTrials = trialService.getAllTrials()
                                             }
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
@@ -270,6 +288,10 @@ class JuryScreen : Screen {
                                 
                                 OutlinedButton(
                                     onClick = {
+                                        // Cancel any running job when starting new trial
+                                        currentJob?.cancel()
+                                        currentJob = null
+                                        isRunning = false
                                         currentTrialState = null
                                         parallelResults = emptyList()
                                         selectedPastTrial = null
@@ -416,6 +438,10 @@ private fun TrialDisplay(
 ) {
     val listState = rememberLazyListState()
     
+    // Use trial's stored personas for past trials, fallback to current personas
+    // This ensures agent names display correctly when viewing past trials
+    val effectivePersonas = trialState.trial.personas.ifEmpty { personas }
+    
     // Auto-scroll to bottom when new interactions are added
     LaunchedEffect(trialState.trial.interactions.size) {
         if (trialState.trial.interactions.isNotEmpty()) {
@@ -508,7 +534,7 @@ private fun TrialDisplay(
                     ) { interaction ->
                         InteractionCard(
                             interaction = interaction,
-                            personas = personas
+                            personas = effectivePersonas
                         )
                     }
                     
@@ -516,7 +542,7 @@ private fun TrialDisplay(
                         item {
                             ThinkingIndicator(
                                 thinkingPersonas = trialState.currentlyThinking,
-                                personas = personas
+                                personas = effectivePersonas
                             )
                         }
                     }
@@ -536,6 +562,10 @@ private fun FullPageTranscript(
     onClose: () -> Unit
 ) {
     val listState = rememberLazyListState()
+    
+    // Use trial's stored personas for past trials, fallback to current personas
+    // This ensures agent names display correctly when viewing past trials
+    val effectivePersonas = trialState.trial.personas.ifEmpty { personas }
     
     // Auto-scroll to bottom when new interactions are added
     LaunchedEffect(trialState.trial.interactions.size) {
@@ -578,7 +608,7 @@ private fun FullPageTranscript(
                         modifier = Modifier.padding(top = 2.dp)
                     )
                     Text(
-                        text = "Participants: ${personas.joinToString(", ") { it.name }}",
+                        text = "Participants: ${effectivePersonas.joinToString(", ") { it.name }}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 2.dp)
@@ -610,7 +640,7 @@ private fun FullPageTranscript(
             ) { interaction ->
                 InteractionCard(
                     interaction = interaction,
-                    personas = personas
+                    personas = effectivePersonas
                 )
             }
             
@@ -619,7 +649,7 @@ private fun FullPageTranscript(
                 item {
                     ThinkingIndicator(
                         thinkingPersonas = trialState.currentlyThinking,
-                        personas = personas
+                        personas = effectivePersonas
                     )
                 }
             }
